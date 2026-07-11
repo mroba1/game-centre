@@ -1,0 +1,418 @@
+// Wav Workshop Game Center — Prisma schema
+// See docs/architecture.md §2.4 for the ERD and design rationale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum DepositStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+}
+
+enum WalletTransactionType {
+  DEPOSIT
+  DEPOSIT_REJECTED
+  STAKE_LOCKED
+  STAKE_REFUNDED
+  PRIZE_WON
+  PLATFORM_FEE
+  MANUAL_ADJUSTMENT
+}
+
+enum GameStatus {
+  WAITING_FOR_OPPONENT
+  OPPONENT_JOINED
+  WAITING_FOR_ADMIN_APPROVAL
+  STARTING
+  IN_PROGRESS
+  COMPLETED
+  PAID
+  CANCELLED
+  REFUNDED
+  DISPUTED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+}
+
+enum DisputeResolution {
+  UPHELD_ORIGINAL
+  OVERTURNED
+  VOIDED_REFUNDED
+}
+
+// ---------- Auth.js required models ----------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  ipAddress    String?
+  userAgent    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  purpose    String // "email-verify" | "password-reset"
+
+  @@unique([identifier, token])
+}
+
+// ---------- Core identity ----------
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  emailVerified DateTime?
+  username      String     @unique
+  passwordHash  String
+  role          Role       @default(USER)
+  status        UserStatus @default(ACTIVE)
+  avatarColor   String     @default("#8B5CF6")
+  country       String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+
+  adminProfile AdminProfile?
+  wallet       Wallet?
+
+  deposits         Deposit[]
+  gamePlayers      GamePlayer[]
+  createdGames     Game[]              @relation("GameCreator")
+  approvedGames    Game[]              @relation("GameApprover")
+  approvedDeposits Deposit[]           @relation("DepositReviewer")
+  notifications    Notification[]
+  auditLogsActed   AuditLog[]          @relation("AuditActor")
+  disputesRaised   Dispute[]           @relation("DisputeRaiser")
+  disputesResolved Dispute[]           @relation("DisputeResolver")
+  walletAdjustments WalletTransaction[] @relation("ManualAdjustmentAdmin")
+
+  @@index([role])
+  @@index([status])
+}
+
+model AdminProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  totpSecret        String?
+  twoFactorEnabled  Boolean  @default(false)
+  permissionScopes  String[] @default([])
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Wallet / ledger ----------
+
+model Wallet {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  balanceKobo    BigInt   @default(0)
+  lockedKobo     BigInt   @default(0) // sum of currently-locked stakes, for available-balance checks
+  updatedAt      DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id                String                @id @default(cuid())
+  walletId          String
+  type              WalletTransactionType
+  amountKobo        BigInt // signed: positive = credit, negative = debit
+  balanceAfterKobo  BigInt
+  relatedGameId     String?
+  relatedDepositId  String?
+  idempotencyKey    String                @unique
+  createdByAdminId  String?
+  reason            String?
+  createdAt         DateTime              @default(now())
+
+  wallet          Wallet   @relation(fields: [walletId], references: [id])
+  relatedGame     Game?    @relation(fields: [relatedGameId], references: [id])
+  relatedDeposit  Deposit? @relation(fields: [relatedDepositId], references: [id])
+  createdByAdmin  User?    @relation("ManualAdjustmentAdmin", fields: [createdByAdminId], references: [id])
+
+  @@index([walletId, createdAt])
+}
+
+// ---------- Deposits ----------
+
+model Deposit {
+  id                String        @id @default(cuid())
+  userId            String
+  amountKobo        BigInt
+  paymentReference  String
+  status            DepositStatus @default(PENDING)
+  reviewedByAdminId String?
+  rejectionReason   String?
+  createdAt         DateTime      @default(now())
+  reviewedAt        DateTime?
+
+  user             User                @relation(fields: [userId], references: [id])
+  reviewedByAdmin  User?               @relation("DepositReviewer", fields: [reviewedByAdminId], references: [id])
+  transactions     WalletTransaction[]
+
+  @@index([status])
+  @@index([userId])
+}
+
+// ---------- Questions / categories ----------
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  icon      String    @default("code")
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  questions Question[]
+  games     Game[]
+}
+
+model Question {
+  id          String     @id @default(cuid())
+  categoryId  String
+  topic       String
+  difficulty  Difficulty @default(MEDIUM)
+  prompt      String
+  explanation String?
+  tags        String[]   @default([])
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+
+  category      Category       @relation(fields: [categoryId], references: [id])
+  options       QuestionOption[]
+  gameQuestions GameQuestion[]
+
+  @@index([categoryId, active])
+}
+
+model QuestionOption {
+  id         String  @id @default(cuid())
+  questionId String
+  label      String
+  isCorrect  Boolean @default(false)
+  sortOrder  Int     @default(0)
+
+  question     Question      @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  gameAnswers  GameAnswer[]
+}
+
+// ---------- Matches ----------
+
+model Game {
+  id               String     @id @default(cuid())
+  categoryId       String
+  createdByUserId  String
+  stakeKobo        BigInt
+  questionCount    Int        @default(10)
+  status           GameStatus @default(WAITING_FOR_OPPONENT)
+  winnerUserId     String?
+  approvedByAdminId String?
+  approvalDeadline DateTime?
+  createdAt        DateTime   @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+
+  category       Category            @relation(fields: [categoryId], references: [id])
+  createdBy      User                @relation("GameCreator", fields: [createdByUserId], references: [id])
+  approvedByAdmin User?              @relation("GameApprover", fields: [approvedByAdminId], references: [id])
+  players        GamePlayer[]
+  gameQuestions  GameQuestion[]
+  transactions   WalletTransaction[]
+  events         GameEvent[]
+  platformRevenue PlatformRevenue[]
+  dispute        Dispute?
+
+  @@index([status])
+  @@index([categoryId, status])
+}
+
+model GamePlayer {
+  id              String   @id @default(cuid())
+  gameId          String
+  userId          String
+  score           Int      @default(0)
+  correctCount    Int      @default(0)
+  totalResponseMs Int      @default(0)
+  forfeited       Boolean  @default(false)
+  joinedAt        DateTime @default(now())
+
+  game    Game         @relation(fields: [gameId], references: [id])
+  user    User         @relation(fields: [userId], references: [id])
+  answers GameAnswer[]
+
+  @@unique([gameId, userId])
+}
+
+model GameQuestion {
+  id          String    @id @default(cuid())
+  gameId      String
+  questionId  String
+  sequence    Int
+  revealedAt  DateTime?
+  deadlineAt  DateTime?
+
+  game     Game         @relation(fields: [gameId], references: [id])
+  question Question     @relation(fields: [questionId], references: [id])
+  answers  GameAnswer[]
+
+  @@unique([gameId, sequence])
+}
+
+model GameAnswer {
+  id               String   @id @default(cuid())
+  gamePlayerId     String
+  gameQuestionId   String
+  selectedOptionId String?
+  isCorrect        Boolean  @default(false)
+  responseMs       Int      @default(0)
+  clientNonce      String   @unique
+  ipAddress        String?
+  submittedAt      DateTime @default(now())
+
+  gamePlayer     GamePlayer      @relation(fields: [gamePlayerId], references: [id])
+  gameQuestion   GameQuestion    @relation(fields: [gameQuestionId], references: [id])
+  selectedOption QuestionOption? @relation(fields: [selectedOptionId], references: [id])
+
+  @@unique([gamePlayerId, gameQuestionId])
+}
+
+// Durable, replayable log of everything broadcast on a match's realtime channel.
+// Doubles as the "rewind" mechanism for reconnecting clients regardless of
+// whether the Ably transport is configured (see lib/realtime).
+model GameEvent {
+  id        String   @id @default(cuid())
+  seq       Int      @default(autoincrement())
+  gameId    String
+  type      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  game Game @relation(fields: [gameId], references: [id])
+
+  @@index([gameId, seq])
+}
+
+model Dispute {
+  id                String            @id @default(cuid())
+  gameId            String            @unique
+  raisedByUserId    String
+  reason            String
+  status            DisputeStatus     @default(OPEN)
+  resolvedByAdminId String?
+  resolutionReason  String?
+  resolution        DisputeResolution?
+  createdAt         DateTime          @default(now())
+  resolvedAt        DateTime?
+
+  game            Game  @relation(fields: [gameId], references: [id])
+  raisedByUser    User  @relation("DisputeRaiser", fields: [raisedByUserId], references: [id])
+  resolvedByAdmin User? @relation("DisputeResolver", fields: [resolvedByAdminId], references: [id])
+}
+
+// ---------- Notifications / audit / revenue / settings ----------
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, read])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String
+  action       String
+  targetType   String
+  targetId     String
+  beforeState  Json?
+  afterState   Json?
+  reason       String?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  actor User @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([actorUserId])
+}
+
+model PlatformRevenue {
+  id         String   @id @default(cuid())
+  gameId     String
+  amountKobo BigInt
+  createdAt  DateTime @default(now())
+
+  game Game @relation(fields: [gameId], references: [id])
+}
+
+model Setting {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  value       String
+  description String?
+}
