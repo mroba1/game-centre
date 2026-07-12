@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { signIn } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registerSchema, type RegisterInput } from "@/lib/validation/auth";
@@ -37,7 +38,21 @@ export default function RegisterPage() {
       setError(body.error ?? "Registration failed");
       return;
     }
-    router.push(`/verify-email?email=${encodeURIComponent(data.email)}&sent=1`);
+
+    // Email verification is not required to sign in (see modules/auth — the
+    // authorize() check is on user.status, not emailVerified), so go
+    // straight into a session instead of an interstitial "check your inbox" step.
+    const result = await signIn("credentials", {
+      email: data.email,
+      password: data.password,
+      redirect: false,
+    });
+    if (result?.error) {
+      router.push("/login");
+      return;
+    }
+    router.push("/dashboard");
+    router.refresh();
   };
 
   return (
