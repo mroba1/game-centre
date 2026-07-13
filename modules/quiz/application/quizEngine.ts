@@ -231,7 +231,7 @@ async function completeMatch(gameId: string) {
     });
 
     await creditPrize({ userId: outcome.winnerUserId, gameId, stakeKobo: game.stakeKobo, payoutKobo: winnerPayoutKobo });
-    await partialLoserRefund({ userId: outcome.loserUserId, gameId, refundKobo: loserRefundKobo });
+    await partialLoserRefund({ userId: outcome.loserUserId, gameId, stakeKobo: game.stakeKobo, refundKobo: loserRefundKobo });
     await recordPlatformFee({ gameId, feeKobo: platformFeeKobo });
   }
 

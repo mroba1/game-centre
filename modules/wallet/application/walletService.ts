@@ -125,16 +125,18 @@ export async function refundStake(params: {
   );
 }
 
-export async function partialLoserRefund(params: { userId: string; gameId: string; refundKobo: bigint }) {
+export async function partialLoserRefund(params: { userId: string; gameId: string; stakeKobo: bigint; refundKobo: bigint }) {
   return prisma.$transaction((tx) =>
     applyWalletTransaction({
       tx,
       userId: params.userId,
       type: WalletTransactionType.STAKE_REFUNDED,
       amountKobo: params.refundKobo,
-      // the full original stake was locked; it's fully consumed here (unlocked)
-      // even though only part of it is returned — the remainder became platform pool.
-      unlockKobo: params.refundKobo,
+      // The full original stake must be unlocked here, not just the refunded
+      // portion — the remainder didn't stay "locked", it became platform pool.
+      // (Previously unlocked only refundKobo, leaving the difference stuck as
+      // phantom lockedKobo forever after every non-draw loss.)
+      unlockKobo: params.stakeKobo,
       idempotencyKey: `game:${params.gameId}:loser-refund:${params.userId}`,
       relatedGameId: params.gameId,
     })
