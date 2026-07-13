@@ -57,6 +57,7 @@ export default function LiveMatchPage() {
   const [meId, setMeId] = useState<string | null>(null);
   const [result, setResult] = useState<{ winnerUserId: string | null; draw: boolean } | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [isTiebreaker, setIsTiebreaker] = useState(false);
 
   const lastSeqRef = useRef<number>(0);
 
@@ -90,6 +91,10 @@ export default function LiveMatchPage() {
         setResolvedCorrectId(null);
         break;
       case "answer:accepted":
+        break;
+      case "game:tiebreaker":
+        setIsTiebreaker(true);
+        toast.info("Tied! Sudden death — 3 extra questions to decide the winner.");
         break;
       case "question:resolved": {
         const payload = event.payload as { correctOptionId?: string; scores?: Array<{ userId: string; score: number }> };
@@ -247,8 +252,10 @@ export default function LiveMatchPage() {
       {question && (
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="mb-4 flex items-center justify-between text-sm text-muted-foreground">
-            <span>
-              Question {question.sequence} / {game.questionCount}
+            <span className={cn(isTiebreaker && question.sequence > game.questionCount && "font-semibold text-amber-400")}>
+              {isTiebreaker && question.sequence > game.questionCount
+                ? `Sudden Death · Question ${question.sequence - game.questionCount}`
+                : `Question ${question.sequence} / ${game.questionCount}`}
             </span>
             <CountdownBadge deadlineAt={question.deadlineAt} now={now} />
           </div>

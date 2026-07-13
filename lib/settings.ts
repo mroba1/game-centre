@@ -10,6 +10,8 @@ const DEFAULTS = {
   LOSER_REFUND_PERCENT: "10",
   MAX_CONCURRENT_MATCHES_PER_USER: "3",
   QUESTION_TIME_LIMIT_SECONDS: "15",
+  TIEBREAKER_QUESTION_COUNT: "3",
+  TIEBREAKER_TIME_LIMIT_SECONDS: "20",
 } as const;
 
 type SettingKey = keyof typeof DEFAULTS;
@@ -54,4 +56,12 @@ export async function getMaxConcurrentMatchesPerUser(): Promise<number> {
 
 export async function getQuestionTimeLimitSeconds(): Promise<number> {
   return Number(await getRaw("QUESTION_TIME_LIMIT_SECONDS"));
+}
+
+export async function getTiebreakerQuestionCount(): Promise<number> {
+  return Number(await getRaw("TIEBREAKER_QUESTION_COUNT"));
+}
+
+export async function getTiebreakerTimeLimitSeconds(): Promise<number> {
+  return Number(await getRaw("TIEBREAKER_TIME_LIMIT_SECONDS"));
 }

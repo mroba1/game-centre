@@ -5,7 +5,13 @@ import { determineWinner } from "@/modules/quiz/domain/scoring";
 import { computeDrawRefund, computePrizeDistribution } from "@/modules/matchmaking/domain/prizeDistribution";
 import { creditPrize, partialLoserRefund, recordPlatformFee, refundStake } from "@/modules/wallet/application/walletService";
 import { emitGameEvent } from "@/lib/realtime";
-import { getPlatformFeePercent, getLoserRefundPercent, getQuestionTimeLimitSeconds } from "@/lib/settings";
+import {
+  getPlatformFeePercent,
+  getLoserRefundPercent,
+  getQuestionTimeLimitSeconds,
+  getTiebreakerQuestionCount,
+  getTiebreakerTimeLimitSeconds,
+} from "@/lib/settings";
 
 /** Fisher-Yates shuffle — used for question order and option-independent selection. */
 function shuffle<T>(items: T[]): T[] {
@@ -62,11 +68,38 @@ export async function startMatch(gameId: string) {
   await prisma.game.update({ where: { id: game.id }, data: { status: GameStatus.IN_PROGRESS } });
   await emitGameEvent(game.id, "game:starting", { gameId: game.id, countdownSeconds: 5 });
 
-  await revealQuestion(game.id, 1);
+  await revealQuestion(game.id, 1, await getQuestionTimeLimitSeconds());
 }
 
-async function revealQuestion(gameId: string, sequence: number) {
-  const timeLimitSeconds = await getQuestionTimeLimitSeconds();
+/**
+ * Appends a sudden-death round when both players are tied after the last
+ * originally-planned question (see docs/architecture.md §9 default #1,
+ * overridden per product decision: sudden-death round instead of an
+ * immediate response-time tiebreak). Reuses the same "prefer unseen
+ * questions, fall back to the full pool" selection as startMatch(), scoped
+ * to also exclude questions already used earlier in *this* match.
+ */
+async function appendTiebreakerQuestions(gameId: string, categoryId: string, startSequence: number) {
+  const tiebreakerCount = await getTiebreakerQuestionCount();
+
+  const usedInThisGame = await prisma.gameQuestion.findMany({ where: { gameId }, select: { questionId: true } });
+  const usedIds = new Set(usedInThisGame.map((q) => q.questionId));
+
+  const pool = await prisma.question.findMany({ where: { categoryId, active: true }, select: { id: true } });
+  const unseen = pool.filter((q) => !usedIds.has(q.id));
+  const candidates = unseen.length >= tiebreakerCount ? unseen : pool;
+  const selected = shuffle(candidates).slice(0, tiebreakerCount);
+
+  await prisma.$transaction(
+    selected.map((q, i) =>
+      prisma.gameQuestion.create({ data: { gameId, questionId: q.id, sequence: startSequence + i + 1 } })
+    )
+  );
+
+  return selected.length;
+}
+
+async function revealQuestion(gameId: string, sequence: number, timeLimitSeconds: number) {
   const now = new Date();
   const deadlineAt = new Date(now.getTime() + timeLimitSeconds * 1000);
 
@@ -170,13 +203,19 @@ export async function submitAnswer(params: {
 
   const answersForQuestion = await prisma.gameAnswer.count({ where: { gameQuestionId: gq.id } });
   if (answersForQuestion >= game.players.length) {
-    await resolveQuestion(game.id, gq.id, gq.sequence, game.questionCount);
+    await resolveQuestion(game.id, gq.id, gq.sequence, game.questionCount, game.categoryId);
   }
 
   return answer;
 }
 
-async function resolveQuestion(gameId: string, gameQuestionId: string, sequence: number, questionCount: number) {
+async function resolveQuestion(
+  gameId: string,
+  gameQuestionId: string,
+  sequence: number,
+  originalQuestionCount: number,
+  categoryId: string
+) {
   const gq = await prisma.gameQuestion.findUniqueOrThrow({
     where: { id: gameQuestionId },
     include: { question: { include: { options: true } } },
@@ -191,11 +230,32 @@ async function resolveQuestion(gameId: string, gameQuestionId: string, sequence:
     scores: players,
   });
 
-  if (sequence >= questionCount) {
-    await completeMatch(gameId);
-  } else {
-    await revealQuestion(gameId, sequence + 1);
+  const totalPlanned = await prisma.gameQuestion.count({ where: { gameId } });
+
+  if (sequence < totalPlanned) {
+    const nextIsTiebreaker = sequence + 1 > originalQuestionCount;
+    const timeLimit = nextIsTiebreaker ? await getTiebreakerTimeLimitSeconds() : await getQuestionTimeLimitSeconds();
+    await revealQuestion(gameId, sequence + 1, timeLimit);
+    return;
   }
+
+  // Last question in the current plan — check for a tie.
+  const [a, b] = await prisma.gamePlayer.findMany({ where: { gameId } });
+  const tied = a.correctCount === b.correctCount;
+  const alreadyRanTiebreaker = totalPlanned > originalQuestionCount;
+
+  if (tied && !alreadyRanTiebreaker) {
+    const added = await appendTiebreakerQuestions(gameId, categoryId, totalPlanned);
+    if (added > 0) {
+      await emitGameEvent(gameId, "game:tiebreaker", { gameId, questionCount: added });
+      await revealQuestion(gameId, totalPlanned + 1, await getTiebreakerTimeLimitSeconds());
+      return;
+    }
+    // No fresh questions available for a tiebreaker round (tiny question bank) —
+    // fall back to completing the match; determineWinner() decides via response time.
+  }
+
+  await completeMatch(gameId);
 }
 
 async function completeMatch(gameId: string) {
