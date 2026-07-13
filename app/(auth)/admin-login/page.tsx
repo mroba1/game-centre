@@ -1,16 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signIn, signOut, getSession } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,9 +28,11 @@ export default function AdminLoginPage() {
 
     // Credentials are valid for *some* account — but this page is admin-only,
     // so verify the resulting session actually carries the ADMIN role before
-    // letting them in. Otherwise a valid regular-user login here would just
-    // get redirected away by middleware with no explanation.
-    const session = await getSession();
+    // letting them in. A direct no-store fetch (rather than next-auth/react's
+    // getSession(), which can read a stale client-side cache immediately
+    // after signIn()) guarantees we see the just-established session.
+    const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
+    const session = await sessionRes.json();
     if (session?.user?.role !== "ADMIN") {
       await signOut({ redirect: false });
       setSubmitting(false);
@@ -40,8 +40,7 @@ export default function AdminLoginPage() {
       return;
     }
 
-    router.push("/admin/overview");
-    router.refresh();
+    window.location.href = "/admin/overview";
   };
 
   return (
