@@ -75,6 +75,11 @@ function LoginForm() {
           Create one
         </Link>
       </p>
+      <p className="mt-2 text-center text-xs text-muted-foreground">
+        <Link href="/admin-login" className="hover:underline">
+          Administrator sign in
+        </Link>
+      </p>
     </AuthCard>
   );
 }
