@@ -58,6 +58,12 @@ export async function createGame(params: { userId: string; categoryId: string; s
   try {
     await lockStake({ userId: params.userId, gameId: game.id, stakeKobo: params.stakeKobo });
   } catch (err) {
+    // The nested `players: { create: ... } }` above already inserted a
+    // GamePlayer row referencing this game — deleting the Game first (as
+    // this used to do) violates that foreign key and throws an unhandled
+    // Prisma error, masking the real error (e.g. insufficient funds) behind
+    // a generic 500. Delete the child row first.
+    await prisma.gamePlayer.deleteMany({ where: { gameId: game.id } });
     await prisma.game.delete({ where: { id: game.id } });
     throw err;
   }
@@ -99,7 +105,21 @@ export async function joinGame(params: { userId: string; gameId: string }) {
     return locked;
   });
 
-  await lockStake({ userId: params.userId, gameId: game.id, stakeKobo: game.stakeKobo });
+  try {
+    await lockStake({ userId: params.userId, gameId: game.id, stakeKobo: game.stakeKobo });
+  } catch (err) {
+    // The join transaction above already committed the GamePlayer row and
+    // the WAITING_FOR_ADMIN_APPROVAL transition. If the stake lock fails
+    // (e.g. insufficient funds), that must be undone — otherwise the match
+    // proceeds as if both players staked when the joiner never actually did.
+    await prisma.gamePlayer.deleteMany({ where: { gameId: game.id, userId: params.userId } });
+    await prisma.game.update({
+      where: { id: game.id },
+      data: { status: GameStatus.WAITING_FOR_OPPONENT, approvalDeadline: null },
+    });
+    throw err;
+  }
+
   await emitGameEvent(game.id, "game:opponent-joined", { gameId: game.id, opponentId: params.userId });
   await emitUserEvent(game.createdByUserId, "notification", { type: "OPPONENT_JOINED", gameId: game.id });
 
