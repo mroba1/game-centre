@@ -86,22 +86,21 @@ export default function WalletPage() {
 
   const submitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!receiptFile) {
-      toast.error("Please attach a screenshot or photo of your payment receipt.");
-      return;
-    }
     setSubmitting(true);
 
-    const uploadForm = new FormData();
-    uploadForm.append("file", receiptFile);
-    const uploadRes = await fetch("/api/deposits/upload-receipt", { method: "POST", body: uploadForm });
-    if (!uploadRes.ok) {
-      setSubmitting(false);
-      const body = await uploadRes.json().catch(() => ({}));
-      toast.error(body.error ?? "Could not upload receipt");
-      return;
+    let receiptUrl: string | undefined;
+    if (receiptFile) {
+      const uploadForm = new FormData();
+      uploadForm.append("file", receiptFile);
+      const uploadRes = await fetch("/api/deposits/upload-receipt", { method: "POST", body: uploadForm });
+      if (!uploadRes.ok) {
+        setSubmitting(false);
+        const body = await uploadRes.json().catch(() => ({}));
+        toast.error(body.error ?? "Could not upload receipt");
+        return;
+      }
+      ({ url: receiptUrl } = await uploadRes.json());
     }
-    const { url: receiptUrl } = await uploadRes.json();
 
     const res = await fetch("/api/deposits", {
       method: "POST",
@@ -184,7 +183,7 @@ export default function WalletPage() {
               <Input id="reference" required placeholder="e.g. bank transfer narration" value={reference} onChange={(e) => setReference(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="receipt">Receipt Screenshot</Label>
+              <Label htmlFor="receipt">Receipt Screenshot (optional)</Label>
               {receiptPreview ? (
                 <div className="relative w-fit">
                   {/* eslint-disable-next-line @next/next/no-img-element -- user-selected local file preview, not a Next-optimizable remote asset */}
@@ -204,7 +203,7 @@ export default function WalletPage() {
                   className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground hover:bg-muted/40"
                 >
                   <ImagePlus className="size-4" />
-                  Upload a screenshot or photo of your payment receipt
+                  Attach a screenshot or photo of your receipt (speeds up approval)
                 </label>
               )}
               <input
