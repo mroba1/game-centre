@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       amountKobo: nairaToKobo(parsed.data.amountNaira),
       paymentReference: parsed.data.paymentReference,
+      receiptUrl: parsed.data.receiptUrl,
     });
     return NextResponse.json({ ...deposit, amountKobo: deposit.amountKobo.toString() }, { status: 201 });
   } catch (err) {

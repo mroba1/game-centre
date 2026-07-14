@@ -4,12 +4,13 @@ import { creditDeposit } from "@/modules/wallet/application/walletService";
 import { recordAuditLog } from "@/modules/audit/application/auditLog";
 import { emitUserEvent } from "@/lib/realtime";
 
-export async function createDeposit(params: { userId: string; amountKobo: bigint; paymentReference: string }) {
+export async function createDeposit(params: { userId: string; amountKobo: bigint; paymentReference: string; receiptUrl: string }) {
   return prisma.deposit.create({
     data: {
       userId: params.userId,
       amountKobo: params.amountKobo,
       paymentReference: params.paymentReference,
+      receiptUrl: params.receiptUrl,
       status: DepositStatus.PENDING,
     },
   });

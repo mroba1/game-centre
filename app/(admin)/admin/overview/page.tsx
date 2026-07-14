@@ -21,9 +21,9 @@ export default async function AdminOverviewPage() {
       prisma.deposit.count({ where: { status: "REJECTED", reviewedAt: { gte: startOfDay } } }),
       prisma.deposit.findMany({
         where: { status: "PENDING" },
-        include: { user: { select: { username: true } } },
         orderBy: { createdAt: "asc" },
         take: 5,
+        select: { id: true, amountKobo: true, paymentReference: true, receiptUrl: true, user: { select: { username: true } } },
       }),
     ]);
   // Withdrawals are a future feature (see docs/architecture.md) — no data source yet.
@@ -53,9 +53,17 @@ export default async function AdminOverviewPage() {
             {deposits.length === 0 && <p className="text-sm text-muted-foreground">No pending deposits.</p>}
             {deposits.map((d) => (
               <div key={d.id} className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 p-3 text-sm">
-                <div>
-                  <p className="font-medium">{d.user.username}</p>
-                  <p className="text-xs text-muted-foreground">Ref: {d.paymentReference}</p>
+                <div className="flex items-center gap-3">
+                  {d.receiptUrl && (
+                    <a href={d.receiptUrl} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element -- remote Blob URL, not a local static asset */}
+                      <img src={d.receiptUrl} alt="Deposit receipt" className="size-10 shrink-0 rounded-md border border-border object-cover" />
+                    </a>
+                  )}
+                  <div>
+                    <p className="font-medium">{d.user.username}</p>
+                    <p className="text-xs text-muted-foreground">Ref: {d.paymentReference}</p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">{formatKobo(d.amountKobo)}</span>

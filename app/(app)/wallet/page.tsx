@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Download, Upload, Clock, CheckCircle2, XCircle, Landmark } from "lucide-react";
+import { Download, Upload, Clock, CheckCircle2, XCircle, Landmark, ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,7 @@ interface Deposit {
   amountKobo: string;
   status: "PENDING" | "COMPLETED" | "REJECTED";
   paymentReference: string;
+  receiptUrl: string | null;
   createdAt: string;
   rejectionReason: string | null;
 }
@@ -53,6 +54,8 @@ export default function WalletPage() {
   const [depositInfo, setDepositInfo] = useState<DepositInfo | null>(null);
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
@@ -73,13 +76,37 @@ export default function WalletPage() {
     load();
   }, [load]);
 
+  const onReceiptSelected = (file: File | null) => {
+    setReceiptFile(file);
+    setReceiptPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+  };
+
   const submitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!receiptFile) {
+      toast.error("Please attach a screenshot or photo of your payment receipt.");
+      return;
+    }
     setSubmitting(true);
+
+    const uploadForm = new FormData();
+    uploadForm.append("file", receiptFile);
+    const uploadRes = await fetch("/api/deposits/upload-receipt", { method: "POST", body: uploadForm });
+    if (!uploadRes.ok) {
+      setSubmitting(false);
+      const body = await uploadRes.json().catch(() => ({}));
+      toast.error(body.error ?? "Could not upload receipt");
+      return;
+    }
+    const { url: receiptUrl } = await uploadRes.json();
+
     const res = await fetch("/api/deposits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amountNaira: Number(amount), paymentReference: reference }),
+      body: JSON.stringify({ amountNaira: Number(amount), paymentReference: reference, receiptUrl }),
     });
     setSubmitting(false);
 
@@ -91,6 +118,7 @@ export default function WalletPage() {
     toast.success("Deposit submitted — an admin will review it shortly.");
     setAmount("");
     setReference("");
+    onReceiptSelected(null);
     load();
   };
 
@@ -155,6 +183,38 @@ export default function WalletPage() {
               <Label htmlFor="reference">Payment Reference</Label>
               <Input id="reference" required placeholder="e.g. bank transfer narration" value={reference} onChange={(e) => setReference(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="receipt">Receipt Screenshot</Label>
+              {receiptPreview ? (
+                <div className="relative w-fit">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- user-selected local file preview, not a Next-optimizable remote asset */}
+                  <img src={receiptPreview} alt="Receipt preview" className="h-32 rounded-lg border border-border object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => onReceiptSelected(null)}
+                    className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
+                    aria-label="Remove receipt"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label
+                  htmlFor="receipt"
+                  className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground hover:bg-muted/40"
+                >
+                  <ImagePlus className="size-4" />
+                  Upload a screenshot or photo of your payment receipt
+                </label>
+              )}
+              <input
+                id="receipt"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                className="hidden"
+                onChange={(e) => onReceiptSelected(e.target.files?.[0] ?? null)}
+              />
+            </div>
             <Button type="submit" disabled={submitting} className="w-full">
               {submitting ? "Submitting..." : "Submit Deposit"}
             </Button>
@@ -176,6 +236,11 @@ export default function WalletPage() {
                     <div>
                       <p className="font-medium">{formatKobo(d.amountKobo)}</p>
                       <p className="text-xs text-muted-foreground">{d.paymentReference}</p>
+                      {d.receiptUrl && (
+                        <a href={d.receiptUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">
+                          View receipt
+                        </a>
+                      )}
                     </div>
                     <DepositStatusBadge status={d.status} />
                   </div>

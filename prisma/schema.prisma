@@ -198,6 +198,7 @@ model Deposit {
   userId            String
   amountKobo        BigInt
   paymentReference  String
+  receiptUrl        String?
   status            DepositStatus @default(PENDING)
   reviewedByAdminId String?
   rejectionReason   String?

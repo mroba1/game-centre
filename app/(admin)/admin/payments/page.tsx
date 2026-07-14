@@ -9,6 +9,7 @@ interface Deposit {
   id: string;
   amountKobo: string;
   paymentReference: string;
+  receiptUrl: string | null;
   createdAt: string;
   user: { username: string; email: string };
 }
@@ -63,10 +64,18 @@ export default function AdminPaymentsPage() {
       <div className="space-y-3">
         {deposits.map((d) => (
           <div key={d.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
-            <div>
-              <p className="font-semibold">{d.user.username}</p>
-              <p className="text-sm text-muted-foreground">{d.user.email}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Ref: {d.paymentReference} · {new Date(d.createdAt).toLocaleString()}</p>
+            <div className="flex items-center gap-3">
+              {d.receiptUrl && (
+                <a href={d.receiptUrl} target="_blank" rel="noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- remote Blob URL, not a local static asset */}
+                  <img src={d.receiptUrl} alt="Deposit receipt" className="size-14 shrink-0 rounded-lg border border-border object-cover" />
+                </a>
+              )}
+              <div>
+                <p className="font-semibold">{d.user.username}</p>
+                <p className="text-sm text-muted-foreground">{d.user.email}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Ref: {d.paymentReference} · {new Date(d.createdAt).toLocaleString()}</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-lg font-bold">{formatKobo(d.amountKobo)}</span>
