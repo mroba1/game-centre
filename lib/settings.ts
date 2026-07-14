@@ -12,6 +12,9 @@ const DEFAULTS = {
   QUESTION_TIME_LIMIT_SECONDS: "15",
   TIEBREAKER_QUESTION_COUNT: "3",
   TIEBREAKER_TIME_LIMIT_SECONDS: "20",
+  DEPOSIT_BANK_NAME: "",
+  DEPOSIT_ACCOUNT_NUMBER: "",
+  DEPOSIT_ACCOUNT_NAME: "",
 } as const;
 
 type SettingKey = keyof typeof DEFAULTS;
@@ -64,4 +67,25 @@ export async function getTiebreakerQuestionCount(): Promise<number> {
 
 export async function getTiebreakerTimeLimitSeconds(): Promise<number> {
   return Number(await getRaw("TIEBREAKER_TIME_LIMIT_SECONDS"));
+}
+
+export async function getDepositBankDetails() {
+  return {
+    bankName: await getRaw("DEPOSIT_BANK_NAME"),
+    accountNumber: await getRaw("DEPOSIT_ACCOUNT_NUMBER"),
+    accountName: await getRaw("DEPOSIT_ACCOUNT_NAME"),
+  };
+}
+
+/** Admin-facing settings editor — every key in DEFAULTS is editable this way. */
+export async function setSetting(key: SettingKey, value: string, description?: string) {
+  await prisma.setting.upsert({
+    where: { key },
+    update: { value },
+    create: { key, value, description },
+  });
+}
+
+export function listSettingKeys(): SettingKey[] {
+  return Object.keys(DEFAULTS) as SettingKey[];
 }

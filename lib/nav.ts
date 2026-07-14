@@ -44,4 +44,5 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Questions", href: "/admin/questions", icon: HelpCircle },
   { label: "Revenue", href: "/admin/revenue", icon: TrendingUp },
   { label: "Audit Log", href: "/admin/audit-log", icon: ScrollText },
+  { label: "Settings", href: "/admin/settings", icon: Settings },
 ];

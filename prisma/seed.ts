@@ -20,6 +20,9 @@ const SETTINGS: Array<{ key: string; value: string; description: string }> = [
   { key: "QUESTION_TIME_LIMIT_SECONDS", value: "15", description: "Seconds each player has to answer a revealed question." },
   { key: "TIEBREAKER_QUESTION_COUNT", value: "3", description: "Extra sudden-death questions revealed if both players are tied after the normal question count." },
   { key: "TIEBREAKER_TIME_LIMIT_SECONDS", value: "20", description: "Seconds each player has to answer a tiebreaker question." },
+  { key: "DEPOSIT_BANK_NAME", value: "", description: "Bank name shown to users for manual deposits. Set in Admin → Settings." },
+  { key: "DEPOSIT_ACCOUNT_NUMBER", value: "", description: "Account number shown to users for manual deposits. Set in Admin → Settings." },
+  { key: "DEPOSIT_ACCOUNT_NAME", value: "", description: "Account holder name shown to users for manual deposits. Set in Admin → Settings." },
 ];
 
 const QUESTIONS: Array<{
@@ -2847,9 +2850,12 @@ async function main() {
   }
 
   for (const s of SETTINGS) {
+    // Never overwrite `value` on an existing row — admin-configured settings
+    // (bank details, fee %, stake tiers, ...) must survive a reseed/redeploy.
+    // Only brand-new keys get their seed default value.
     await prisma.setting.upsert({
       where: { key: s.key },
-      update: { value: s.value, description: s.description },
+      update: { description: s.description },
       create: s,
     });
   }

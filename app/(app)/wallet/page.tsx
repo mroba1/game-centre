@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { Download, Upload, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { Download, Upload, Clock, CheckCircle2, XCircle, Landmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,23 +40,32 @@ const TYPE_LABEL: Record<string, string> = {
   MANUAL_ADJUSTMENT: "Manual Adjustment",
 };
 
+interface DepositInfo {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+}
+
 export default function WalletPage() {
   const [summary, setSummary] = useState<WalletSummary | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [depositInfo, setDepositInfo] = useState<DepositInfo | null>(null);
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    const [w, t, d] = await Promise.all([
+    const [w, t, d, info] = await Promise.all([
       fetch("/api/wallet").then((r) => r.json()),
       fetch("/api/wallet/transactions").then((r) => r.json()),
       fetch("/api/deposits").then((r) => r.json()),
+      fetch("/api/deposit-info").then((r) => r.json()),
     ]);
     setSummary(w);
     setTransactions(t);
     setDeposits(d);
+    setDepositInfo(info);
   }, []);
 
   useEffect(() => {
@@ -104,8 +113,39 @@ export default function WalletPage() {
             <Download className="size-4 text-primary" /> Deposit Funds
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Transfer to our account, then submit your reference below. An admin manually verifies every deposit.
+            Transfer to the account below, then submit your reference here. An admin manually verifies every deposit.
           </p>
+
+          {depositInfo && (depositInfo.bankName || depositInfo.accountNumber) ? (
+            <div className="mt-4 space-y-2 rounded-xl border border-border bg-muted/30 p-4 text-sm">
+              <div className="flex items-center gap-2 font-semibold text-primary">
+                <Landmark className="size-4" /> Send to this account
+              </div>
+              {depositInfo.bankName && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Bank</span>
+                  <span className="font-medium">{depositInfo.bankName}</span>
+                </div>
+              )}
+              {depositInfo.accountNumber && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Account Number</span>
+                  <span className="font-mono font-medium">{depositInfo.accountNumber}</span>
+                </div>
+              )}
+              {depositInfo.accountName && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Account Name</span>
+                  <span className="font-medium">{depositInfo.accountName}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+              Deposit account details haven&apos;t been set up yet — contact an admin before sending a transfer.
+            </p>
+          )}
+
           <form onSubmit={submitDeposit} className="mt-4 space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="amount">Amount (₦)</Label>
