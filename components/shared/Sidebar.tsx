@@ -7,25 +7,22 @@ import { cn } from "@/lib/utils";
 import { USER_NAV, ADMIN_NAV } from "@/lib/nav";
 import { SignOutButton } from "@/components/shared/SignOutButton";
 
-export function Sidebar({
-  brandTitle,
-  brandSubtitle,
-  variant = "user",
-  footer,
-}: {
+interface SidebarProps {
   brandTitle: string;
   brandSubtitle: string;
   variant?: "user" | "admin";
   footer?: React.ReactNode;
-}) {
+}
+
+function SidebarBody({ brandTitle, brandSubtitle, variant = "user", footer, onNavigate }: SidebarProps & { onNavigate?: () => void }) {
   const pathname = usePathname();
   // Icon components can't cross the server->client boundary as props (they're
   // not serializable), so the nav config is imported directly here rather
-  // than passed down from the server-component layouts that render <Sidebar>.
+  // than passed down from the server-component layouts that render this.
   const items = variant === "admin" ? ADMIN_NAV : USER_NAV;
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar px-4 py-6 md:flex">
+    <div className="flex h-full w-64 flex-col px-4 py-6">
       <div className="mb-8 flex items-center gap-2 px-2">
         <span
           className={cn(
@@ -49,6 +46,7 @@ export function Sidebar({
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 active
@@ -64,6 +62,17 @@ export function Sidebar({
       </nav>
 
       {footer ?? <SignOutButton />}
+    </div>
+  );
+}
+
+/** Desktop sidebar — hidden below the `md` breakpoint. Use <MobileNav> alongside this for small screens. */
+export function Sidebar(props: SidebarProps) {
+  return (
+    <aside className="hidden shrink-0 border-r border-sidebar-border bg-sidebar md:block">
+      <SidebarBody {...props} />
     </aside>
   );
 }
+
+export { SidebarBody };

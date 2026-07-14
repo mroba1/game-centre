@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatKobo } from "@/lib/money";
+import { MobileNav } from "@/components/shared/MobileNav";
 
 export function Topbar({
   balanceKobo,
@@ -29,9 +30,12 @@ export function Topbar({
 }) {
   return (
     <header className="flex h-16 items-center justify-between gap-4 border-b border-border px-4 md:px-8">
-      <div className="hidden max-w-sm flex-1 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground md:flex">
-        <Search className="size-4" />
-        <span>Search matches, players, categories...</span>
+      <div className="flex items-center gap-2">
+        <MobileNav brandTitle="Wav Workshop" brandSubtitle="Game Center" />
+        <div className="hidden max-w-sm flex-1 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground md:flex">
+          <Search className="size-4" />
+          <span>Search matches, players, categories...</span>
+        </div>
       </div>
 
       <div className="flex flex-1 items-center justify-end gap-3">
