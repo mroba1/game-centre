@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { assertTransition } from "@/modules/matchmaking/domain/gameStateMachine";
 import { lockStake, refundStake } from "@/modules/wallet/application/walletService";
 import { recordAuditLog } from "@/modules/audit/application/auditLog";
-import { emitGameEvent, emitUserEvent } from "@/lib/realtime";
+import { emitGameEvent } from "@/lib/realtime";
+import { notifyUser } from "@/modules/notifications/application/notificationService";
 import {
   getDefaultQuestionCount,
   getMatchApprovalSlaMinutes,
@@ -121,7 +122,12 @@ export async function joinGame(params: { userId: string; gameId: string }) {
   }
 
   await emitGameEvent(game.id, "game:opponent-joined", { gameId: game.id, opponentId: params.userId });
-  await emitUserEvent(game.createdByUserId, "notification", { type: "OPPONENT_JOINED", gameId: game.id });
+  await notifyUser({
+    userId: game.createdByUserId,
+    type: "OPPONENT_JOINED",
+    title: "Opponent joined your match",
+    body: "Someone joined your match — it's now waiting for admin approval.",
+  });
 
   return prisma.game.findUniqueOrThrow({ where: { id: game.id } });
 }
@@ -190,6 +196,15 @@ export async function cancelMatchByAdmin(params: { gameId: string; adminId: stri
   await emitGameEvent(game.id, "game:cancelled", { gameId: game.id, reason: params.reason });
 
   return updated;
+}
+
+/** Matches the user is currently part of that need their attention — not yet a bare "open lobby" listing, not yet finished. */
+export async function listMyActiveMatches(userId: string) {
+  return prisma.game.findMany({
+    where: { status: { in: [...ACTIVE_STATUSES, GameStatus.DISPUTED] }, players: { some: { userId } } },
+    include: { category: true, players: { include: { user: { select: { id: true, username: true } } } } },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 export async function listOpenLobbies(params: { categoryId?: string } = {}) {

@@ -5,6 +5,7 @@ import { determineWinner } from "@/modules/quiz/domain/scoring";
 import { computeDrawRefund, computePrizeDistribution } from "@/modules/matchmaking/domain/prizeDistribution";
 import { creditPrize, partialLoserRefund, recordPlatformFee, refundStake } from "@/modules/wallet/application/walletService";
 import { emitGameEvent } from "@/lib/realtime";
+import { notifyUser } from "@/modules/notifications/application/notificationService";
 import {
   getPlatformFeePercent,
   getLoserRefundPercent,
@@ -67,6 +68,14 @@ export async function startMatch(gameId: string) {
 
   await prisma.game.update({ where: { id: game.id }, data: { status: GameStatus.IN_PROGRESS } });
   await emitGameEvent(game.id, "game:starting", { gameId: game.id, countdownSeconds: 5 });
+  for (const player of game.players) {
+    await notifyUser({
+      userId: player.userId,
+      type: "MATCH_STARTED",
+      title: "Your match has started",
+      body: "An admin approved your match — jump in now to answer the first question.",
+    });
+  }
 
   await revealQuestion(game.id, 1, await getQuestionTimeLimitSeconds());
 }

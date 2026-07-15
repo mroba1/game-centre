@@ -2,7 +2,8 @@ import { DepositStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { creditDeposit } from "@/modules/wallet/application/walletService";
 import { recordAuditLog } from "@/modules/audit/application/auditLog";
-import { emitUserEvent } from "@/lib/realtime";
+import { notifyUser } from "@/modules/notifications/application/notificationService";
+import { formatKobo } from "@/lib/money";
 
 export async function createDeposit(params: { userId: string; amountKobo: bigint; paymentReference: string; receiptUrl?: string }) {
   return prisma.deposit.create({
@@ -59,7 +60,12 @@ export async function approveDeposit(params: { depositId: string; adminId: strin
     ipAddress: params.ipAddress,
   });
 
-  await emitUserEvent(deposit.userId, "deposit:approved", { depositId: deposit.id, amountKobo: deposit.amountKobo.toString() });
+  await notifyUser({
+    userId: deposit.userId,
+    type: "DEPOSIT_APPROVED",
+    title: "Deposit approved",
+    body: `${formatKobo(deposit.amountKobo)} has been credited to your wallet.`,
+  });
 
   return updated;
 }
@@ -89,7 +95,12 @@ export async function rejectDeposit(params: { depositId: string; adminId: string
     ipAddress: params.ipAddress,
   });
 
-  await emitUserEvent(deposit.userId, "deposit:rejected", { depositId: deposit.id, reason: params.reason });
+  await notifyUser({
+    userId: deposit.userId,
+    type: "DEPOSIT_REJECTED",
+    title: "Deposit rejected",
+    body: params.reason,
+  });
 
   return updated;
 }

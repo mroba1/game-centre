@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Clock } from "lucide-react";
+import { Plus, Clock, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,22 @@ interface Category {
   id: string;
   name: string;
 }
+interface MyMatch {
+  id: string;
+  status: string;
+  stakeKobo: string;
+  category: { name: string };
+  players: Array<{ user: { id: string; username: string } }>;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  WAITING_FOR_OPPONENT: "Waiting for opponent",
+  OPPONENT_JOINED: "Opponent joined",
+  WAITING_FOR_ADMIN_APPROVAL: "Waiting for admin approval",
+  STARTING: "Starting...",
+  IN_PROGRESS: "In progress",
+  DISPUTED: "Disputed — under review",
+};
 
 function timeAgo(iso: string) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -35,20 +51,26 @@ function timeAgo(iso: string) {
 export default function ActiveGamesPage() {
   const router = useRouter();
   const [lobbies, setLobbies] = useState<Lobby[]>([]);
+  const [myMatches, setMyMatches] = useState<MyMatch[]>([]);
+  const [meId, setMeId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [filter, setFilter] = useState<string>("ALL");
   const [joiningId, setJoiningId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const qs = filter !== "ALL" ? `?categoryId=${filter}` : "";
-    const res = await fetch(`/api/games${qs}`);
-    if (res.ok) setLobbies(await res.json());
+    const [lobbiesRes, mineRes] = await Promise.all([fetch(`/api/games${qs}`), fetch("/api/games/mine")]);
+    if (lobbiesRes.ok) setLobbies(await lobbiesRes.json());
+    if (mineRes.ok) setMyMatches(await mineRes.json());
   }, [filter]);
 
   useEffect(() => {
     fetch("/api/categories")
       .then((r) => r.json())
       .then(setCategories);
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((s) => setMeId(s?.user?.id ?? null));
   }, []);
 
   useEffect(() => {
@@ -72,6 +94,8 @@ export default function ActiveGamesPage() {
     router.push(`/games/${id}`);
   };
 
+  const joinableLobbies = lobbies.filter((l) => l.players[0]?.user.id !== meId);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -84,6 +108,41 @@ export default function ActiveGamesPage() {
         </Button>
       </div>
 
+      {myMatches.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-muted-foreground">My Matches</h2>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {myMatches.map((m) => {
+              const opponent = m.players.find((p) => p.user.id !== meId)?.user;
+              const isReady = m.status === "IN_PROGRESS";
+              return (
+                <Link
+                  key={m.id}
+                  href={`/games/${m.id}`}
+                  className={cn(
+                    "flex items-center justify-between rounded-xl border p-4 transition-colors",
+                    isReady ? "border-primary/50 bg-primary/5 hover:bg-primary/10" : "border-border bg-card hover:bg-muted/40"
+                  )}
+                >
+                  <div>
+                    <p className="text-sm font-semibold">
+                      {m.category.name} · {formatKobo(m.stakeKobo)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {opponent ? `vs ${opponent.username}` : "Waiting for an opponent"}
+                    </p>
+                    <p className={cn("mt-1 text-xs font-medium", isReady ? "text-primary" : "text-amber-400")}>
+                      {STATUS_LABEL[m.status] ?? m.status}
+                    </p>
+                  </div>
+                  <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <FilterPill active={filter === "ALL"} onClick={() => setFilter("ALL")}>
           All Categories
@@ -95,14 +154,14 @@ export default function ActiveGamesPage() {
         ))}
       </div>
 
-      {lobbies.length === 0 && (
+      {joinableLobbies.length === 0 && (
         <div className="rounded-2xl border border-dashed border-border p-10 text-center text-muted-foreground">
           No open lobbies right now. Be the first to create one.
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {lobbies.map((lobby) => {
+        {joinableLobbies.map((lobby) => {
           const stakeKobo = BigInt(lobby.stakeKobo);
           const pool = stakeKobo * 2n;
           const fee = (pool * 5n) / 100n;
